@@ -12,7 +12,14 @@
 
 An End-To-End Closed Domain Question Answering System. Built on top of the HuggingFace [transformers](https://github.com/huggingface/transformers) library.
 
-**⛔ [NOT MAINTAINED] This repository is no longer maintained, but is being kept around for educational purposes. If you want a maintained alternative to cdQA check out: https://github.com/deepset-ai/haystack**
+## TODO:
+
+1. Alignments pyserini using SQuAD
+2. Fine tuned with custom dataset
+3. Change First Stage Core by low-level code
+4. Experiment the Second Stage Language Model
+
+
 
 ## cdQA in details
 

@@ -14,6 +14,7 @@ An End-To-End Closed Domain Question Answering System. Built on top of the Huggi
 
 ## TODO:
 
+0. Refresh all package with new version
 1. Alignments pyserini using SQuAD
 2. Fine tuned with custom dataset
 3. Change First Stage Core by low-level code

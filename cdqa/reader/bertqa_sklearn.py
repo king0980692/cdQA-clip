@@ -44,6 +44,10 @@ from transformers.tokenization_bert import BasicTokenizer, whitespace_tokenize
 
 from sklearn.base import BaseEstimator, TransformerMixin
 
+from typing import Optional, List
+from dataclasses import dataclass
+
+
 if sys.version_info[0] == 2:
     import cPickle as pickle
 else:
@@ -52,35 +56,23 @@ else:
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class SquadExample(object):
     """
     A single training/test example for the Squad dataset.
     For examples without an answer, the start and end position are -1.
     """
+    qas_id: str
+    question_text: str
+    doc_tokens: List[str]
+    orig_answer_text: Optional[str]=None
+    start_position: Optional[int]=None
+    end_position: Optional[int]=None
+    is_impossible: Optional[bool]=None
+    paragraph: Optional[str]=None
+    title: Optional[str]=None
+    retriever_score: Optional[int]=None
 
-    def __init__(
-        self,
-        qas_id,
-        question_text,
-        doc_tokens,
-        orig_answer_text=None,
-        start_position=None,
-        end_position=None,
-        is_impossible=None,
-        paragraph=None,
-        title=None,
-        retriever_score=None,
-    ):
-        self.qas_id = qas_id
-        self.question_text = question_text
-        self.doc_tokens = doc_tokens
-        self.orig_answer_text = orig_answer_text
-        self.start_position = start_position
-        self.end_position = end_position
-        self.is_impossible = is_impossible
-        self.paragraph = paragraph
-        self.title = title
-        self.retriever_score = retriever_score
 
     def __str__(self):
         return self.__repr__()
@@ -99,40 +91,24 @@ class SquadExample(object):
         return s
 
 
+@dataclass
 class InputFeatures(object):
     """A single set of features of data."""
-
-    def __init__(self,
-                 unique_id,
-                 example_index,
-                 doc_span_index,
-                 tokens,
-                 token_to_orig_map,
-                 token_is_max_context,
-                 input_ids,
-                 input_mask,
-                 segment_ids,
-                 cls_index,
-                 p_mask,
-                 paragraph_len,
-                 start_position=None,
-                 end_position=None,
-                 is_impossible=None):
-        self.unique_id = unique_id
-        self.example_index = example_index
-        self.doc_span_index = doc_span_index
-        self.tokens = tokens
-        self.token_to_orig_map = token_to_orig_map
-        self.token_is_max_context = token_is_max_context
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.cls_index = cls_index
-        self.p_mask = p_mask
-        self.paragraph_len = paragraph_len
-        self.start_position = start_position
-        self.end_position = end_position
-        self.is_impossible = is_impossible
+    unique_id: int
+    example_index: int
+    doc_span_index: int
+    tokens: List[str]
+    token_to_orig_map: List[int]
+    token_is_max_context: List[bool]
+    input_ids: List[int]
+    input_mask: List[int]
+    segment_ids: List[int]
+    cls_index: int
+    p_mask: List[int]
+    paragraph_len: int
+    start_position: Optional[int]
+    end_position: Optional[int]
+    is_impossible: bool
 
 
 def read_squad_examples(input_file, is_training, version_2_with_negative):
@@ -143,6 +119,11 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
             input_data = json.load(reader)["data"]
     else:
         input_data = input_file
+
+    def _is_whitespace(c):
+        if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
+            return True
+        return False
 
     examples = []
     for entry in tqdm(input_data):
@@ -215,24 +196,20 @@ def read_squad_examples(input_file, is_training, version_2_with_negative):
 
                 examples.append(
                     SquadExample(
-                        qas_id=qas_id,
-                        question_text=question_text,
-                        doc_tokens=doc_tokens,
-                        orig_answer_text=orig_answer_text,
-                        start_position=start_position,
-                        end_position=end_position,
-                        is_impossible=is_impossible,
-                        paragraph=paragraph_text,
-                        title=entry["title"],
-                        retriever_score=retriever_score,
+                        qas_id=qas_id, #str
+                        question_text=question_text, #str
+                        doc_tokens=doc_tokens, #list of str
+                        orig_answer_text=orig_answer_text, # str
+                        start_position=start_position, # int
+                        end_position=end_position, # int
+                        is_impossible=is_impossible, # bool
+                        paragraph=paragraph_text, # str
+                        title=entry["title"], # str
+                        retriever_score=retriever_score, # int
                     )
                 )
     return examples
 
-def _is_whitespace(c):
-    if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
-        return True
-    return False
 
 def convert_examples_to_features(
     examples,
@@ -266,8 +243,8 @@ def convert_examples_to_features(
             )
         )
 
-    pool = multiprocessing.Pool(workers_num)
-    pool.starmap(convert_examples_to_features_process, tqdm(inputs), chunksize=workers_num)
+    with multiprocessing.Pool(workers_num) as pool:
+        pool.starmap(convert_examples_to_features_process, tqdm(inputs), chunksize=workers_num)
 
     return list(features)
 
@@ -1042,7 +1019,7 @@ class BertProcessor(BaseEstimator, TransformerMixin):
         max_query_length=64,
         verbose=False,
         tokenizer=None,
-        workers_num=8
+        workers_num=1
     ):
 
         self.bert_model = bert_model
@@ -1072,6 +1049,7 @@ class BertProcessor(BaseEstimator, TransformerMixin):
             is_training=self.is_training,
             version_2_with_negative=self.version_2_with_negative,
         )
+        
 
         features = convert_examples_to_features(
             examples=examples,
@@ -1248,7 +1226,8 @@ class BertQA(BaseEstimator):
             self.device = torch.device(
                 "cuda" if torch.cuda.is_available() and not self.no_cuda else "cpu"
             )
-            self.n_gpu = torch.cuda.device_count()
+            # self.n_gpu = torch.cuda.device_count()
+            self.n_gpu = 1
         else:
             torch.cuda.set_device(self.local_rank)
             self.device = torch.device("cuda", self.local_rank)
@@ -1265,9 +1244,9 @@ class BertQA(BaseEstimator):
 
             logger.info(
                 "device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
-                    self.device, self.n_gpu, bool(self.local_rank != -1), self.fp16
                 )
             )
+
 
     def fit(self, X, y=None):
 
